@@ -1,1 +1,5 @@
-
+hindsight-client
+groq
+python-dotenv
+fastapi
+uvicorn
