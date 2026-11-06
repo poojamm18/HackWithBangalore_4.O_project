@@ -1,15 +1,26 @@
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
+
 from typing import Optional
+from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+
 from pydantic import BaseModel
 
 app = FastAPI(title="Incident Memory Agent (mock mode)")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def now_iso():
@@ -226,7 +237,3 @@ def services():
         "message": "Backend connected. Using demo data; Hindsight memory is not connected yet.",
     }
 
-# ---------- Serve the frontend folder at / (must be last) ----------
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-if FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
