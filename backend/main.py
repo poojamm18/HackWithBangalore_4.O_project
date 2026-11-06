@@ -108,9 +108,13 @@ def analyze(req: AnalyzeRequest):
     # (In mock mode, fall back to the first two so the page always has something.)
     same = [i for i in INCIDENTS if i["service"] == req.service] or INCIDENTS[:2]
     memories = [
-        {"id": f"MEM-{i['id']}",
-         "text": f"{i['title']}: {i['rootCause']}. Fix tried: {i['resolution']} ({i['outcome']}).",
-         "date": i["createdAt"], "relatedIncidentId": i["id"]}
+        {"id": i["id"], "title": i["title"], "description": i["description"],
+         "service": i["service"], "environment": i["environment"],
+         "severity": i["severity"], "rootCause": i["rootCause"],
+         "fix": i["resolution"], "outcome": i["outcome"],
+         "relevance": ("An earlier incident on the same service."
+                       if i["service"] == req.service
+                       else "A similar incident was resolved using this fix.")}
         for i in same[:3]
     ]
 
@@ -214,14 +218,13 @@ def insights():
 @app.get("/api/services")
 def services():
     return {
-        "mode": "mock",
+        "mode": "demo",
         "backendConfigured": True,
         "memoryConfigured": False,
         "connected": True,
         "checked": True,
-        "message": "Backend connected. Using mock data; Hindsight memory is not connected yet.",
+        "message": "Backend connected. Using demo data; Hindsight memory is not connected yet.",
     }
-
 
 # ---------- Serve the frontend folder at / (must be last) ----------
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
