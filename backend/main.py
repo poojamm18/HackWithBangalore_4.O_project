@@ -281,7 +281,11 @@ def services():
     }
 
 
-# ---------- Serve the frontend folder at / (must be last) ----------
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-if FRONTEND_DIR.exists():
+# ---------- Serve the website folder at / (must be last) ----------
+ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = next(
+    (ROOT / name for name in ("web", "frontend") if (ROOT / name / "index.html").exists()),
+    None,
+)
+if FRONTEND_DIR:
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

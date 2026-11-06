@@ -1,8 +1,8 @@
 
 const API_CONFIG = Object.freeze({
   mockMode: false,
-  backendDemoMode: true,
-  apiBaseUrl: "http://127.0.0.1:8001",
+  backendDemoMode: false,
+  apiBaseUrl: window.location.origin,
   endpoints: Object.freeze({
     analyseIncident: "/api/incidents/analyze",
     submitFeedback: "/api/incidents/:incidentId/feedback",
