@@ -1,80 +1,88 @@
+import asyncio
+import json
+import os
 from collections import Counter
 from datetime import datetime, timezone
-
+from pathlib import Path
 from typing import Optional
-from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-app = FastAPI(title="Incident Memory Agent (mock mode)")
+from backend.agent import evidence_status, recommend
+from backend.memory import BANK_ID, find_related_ids_async, get_async_client, load_records
+
+load_dotenv()
+
+app = FastAPI(title="Incident Memory Agent")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+LIVE_FILE = Path(__file__).resolve().parent.parent / "data" / "live_incidents.json"
+
 
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-# ---------- Pretend memory (replaced by real Hindsight code later) ----------
-INCIDENTS = [
-    {"id": "INC-042", "title": "Database connection timeout",
-     "description": "Payment requests timing out because the database refused new connections.",
-     "service": "payments-service", "environment": "Production", "severity": "High",
-     "category": "Database connection exhaustion", "rootCause": "Connection pool saturation",
-     "resolution": "Increase connection pool size", "outcome": "Worked",
-     "createdAt": "2026-03-14T10:22:00Z", "feedback": {}, "recommendations": [], "isDemo": True},
-    {"id": "INC-051", "title": "Token validation latency spike",
-     "description": "Login checks became slow after the cache nodes ran out of memory.",
-     "service": "auth-service", "environment": "Production", "severity": "Medium",
-     "category": "Cache failure", "rootCause": "Cache nodes out of memory",
-     "resolution": "Restart cache cluster", "outcome": "Worked",
-     "createdAt": "2026-04-02T08:10:00Z", "feedback": {}, "recommendations": [], "isDemo": True},
-    {"id": "INC-063", "title": "Queue consumer stalled",
-     "description": "Order events stopped being processed in staging.",
-     "service": "orders-service", "environment": "Staging", "severity": "Low",
-     "category": "Message queue backlog", "rootCause": "Consumers crashed after a bad deploy",
-     "resolution": "Scale consumers", "outcome": "Failed",
-     "createdAt": "2026-05-19T15:45:00Z", "feedback": {}, "recommendations": [], "isDemo": True},
-    {"id": "INC-077", "title": "Checkout latency after deploy",
-     "description": "Checkout slowed down right after a release.",
-     "service": "payments-service", "environment": "Production", "severity": "High",
-     "category": "Database connection exhaustion", "rootCause": "Connection pool saturation",
-     "resolution": "Increase connection pool size", "outcome": "Worked",
-     "createdAt": "2026-06-08T12:05:00Z", "feedback": {}, "recommendations": [], "isDemo": True},
-]
-
-FIXES = {
-    "FIX-01": {"title": "Increase connection pool size",
-               "description": "Raises the number of database connections the service can open, so requests stop waiting for a free one.",
-               "steps": ["Check pool utilisation", "Raise max connections", "Restart workers"],
-               "successes": 3, "failures": 1},
-    "FIX-02": {"title": "Check database availability and failover",
-               "description": "Confirms the database is healthy and switches to a replica if the primary is unreachable.",
-               "steps": ["Verify DB health", "Check replica lag", "Fail over if needed"],
-               "successes": 1, "failures": 0},
-}
+# ---------- Past incidents (Rohini's data file) ----------
+def load_incidents():
+    """Read the past incidents and shape them the way Pooja's page expects."""
+    out = []
+    for r in load_records():
+        out.append({
+            "id": r["id"], "title": r["title"], "description": r["description"],
+            "service": r["service"],
+            "environment": r["environment"].capitalize(),
+            "severity": r["severity"].capitalize(),
+            "category": r.get("category") or f"{r['service']} incidents",
+            "rootCause": r["rootCause"], "resolution": r["resolution"],
+            "outcome": r["outcome"], "createdAt": r["createdAt"],
+            "feedback": {}, "recommendations": [], "isDemo": True,
+        })
+    return out
 
 
-def evidence_status(successes, failures):
-    if successes == 0 and failures == 0:
-        return "No history yet"
-    if failures == 0:
-        return "Consistently worked"
-    if successes == 0:
-        return "Previously failed"
-    return "Mixed historical outcomes"
+def load_live():
+    """Incidents reported while the app is running (kept across restarts)."""
+    if LIVE_FILE.exists():
+        try:
+            return json.loads(LIVE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+    return []
+
+
+def save_live():
+    live = [i for i in INCIDENTS if not i["isDemo"]]
+    LIVE_FILE.write_text(json.dumps(live, indent=2), encoding="utf-8")
+
+
+INCIDENTS = load_incidents() + load_live()
+
+
+def next_incident_id():
+    nums = []
+    for i in INCIDENTS:
+        tail = i["id"].split("-")[-1]
+        if tail.isdigit():
+            nums.append(int(tail))
+    return f"INC-{max(nums + [199]) + 1}"
 
 
 # ---------- What the frontend sends us ----------
@@ -110,75 +118,108 @@ async def bad_request(request, exc):
 
 # ---------- 1. Analyse an incident ----------
 @app.post("/api/incidents/analyze")
-def analyze(req: AnalyzeRequest):
-    incident_id = f"INC-{100 + len(INCIDENTS)}"
+async def analyze(req: AnalyzeRequest):
+    incident_id = next_incident_id()
     created = now_iso()
     title = req.description[:60]
 
-    # Find earlier incidents on the same service BEFORE saving the new one.
-    # (In mock mode, fall back to the first two so the page always has something.)
-    same = [i for i in INCIDENTS if i["service"] == req.service] or INCIDENTS[:2]
+    # Only incidents whose outcome is known can teach us anything.
+    known = [i for i in INCIDENTS if i["outcome"] in ("Worked", "Failed")]
+
+    # Step 1: ask Hindsight which past incidents look related.
+    ids = await find_related_ids_async(req.description, req.service, known)
+
+    # Outcomes engineers reported on this service are always part of the evidence.
+    reported = [i["id"] for i in reversed(known)
+                if not i["isDemo"] and i["service"] == req.service][:2]
+    for rid in reported:
+        if rid not in ids:
+            ids.append(rid)
+
+    related = [i for i in known if i["id"] in ids]
+    related.sort(key=lambda i: ids.index(i["id"]))
+
+    # Step 2: ask Groq to write the recommendations (runs in a side thread).
+    result = await asyncio.to_thread(
+        recommend, req.description, req.service, req.environment,
+        req.severity, req.logs, related,
+    )
+
     memories = [
         {"id": i["id"], "title": i["title"], "description": i["description"],
          "service": i["service"], "environment": i["environment"],
          "severity": i["severity"], "rootCause": i["rootCause"],
          "fix": i["resolution"], "outcome": i["outcome"],
-         "relevance": ("An earlier incident on the same service."
-                       if i["service"] == req.service
-                       else "A similar incident was resolved using this fix.")}
-        for i in same[:3]
+         "relevance": ("Outcome reported by an engineer on an earlier incident."
+                       if not i["isDemo"]
+                       else "Recalled from team memory as a similar incident.")}
+        for i in related
     ]
 
-    recommendations = []
-    for fix_id, f in FIXES.items():
-        related_ids = [i["id"] for i in INCIDENTS if i["resolution"] == f["title"]][:3]
-        recommendations.append({
-            "id": fix_id, "title": f["title"], "description": f["description"],
-            "steps": f["steps"],
-            "reason": "A similar incident was resolved this way.",
-            "previousSuccesses": f["successes"], "previousFailures": f["failures"],
-            "evidenceStatus": evidence_status(f["successes"], f["failures"]),
-            "relatedIncidentIds": related_ids,
-        })
-
+    # Keep the recommendations with the incident so feedback can find them later.
     INCIDENTS.append({
         "id": incident_id, "title": title, "description": req.description,
         "service": req.service, "environment": req.environment, "severity": req.severity,
-        "logs": req.logs, "category": "Under investigation",
+        "logs": req.logs, "category": f"{req.service} incidents",
         "rootCause": "Not yet determined", "resolution": "", "outcome": "Pending",
-        "createdAt": created, "feedback": {}, "recommendations": [], "isDemo": False,
+        "createdAt": created, "feedback": {},
+        "recommendations": result["recommendations"], "isDemo": False,
     })
+    save_live()
 
     return {
         "incidentId": incident_id, "title": title, "service": req.service,
         "environment": req.environment, "severity": req.severity, "createdAt": created,
-        "summary": f"Found {len(memories)} related past incident(s) for {req.service}.",
-        "recommendations": recommendations,
+        "summary": result["summary"],
+        "recommendations": result["recommendations"],
         "memories": memories,
-        "lessons": ["Check database limits before increasing pool capacity."],
+        "lessons": result["lessons"],
     }
 
 
 # ---------- 2. Record feedback ----------
 @app.post("/api/incidents/{incident_id}/feedback")
-def feedback(incident_id: str, req: FeedbackRequest):
+async def feedback(incident_id: str, req: FeedbackRequest):
     incident = next((i for i in INCIDENTS if i["id"] == incident_id), None)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
-    fix = FIXES.get(req.fixId)
-    if fix is None:
+    rec = next((r for r in incident["recommendations"] if r["id"] == req.fixId), None)
+    if rec is None:
         raise HTTPException(status_code=404, detail="Fix not found")
 
     if req.worked:
-        fix["successes"] += 1
+        rec["previousSuccesses"] += 1
     else:
-        fix["failures"] += 1
-    incident["resolution"] = fix["title"]
+        rec["previousFailures"] += 1
+    rec["evidenceStatus"] = evidence_status(rec["previousSuccesses"], rec["previousFailures"])
+
+    incident["resolution"] = rec["title"]
+    incident["rootCause"] = "Not confirmed (outcome reported by the engineer)"
     incident["outcome"] = "Worked" if req.worked else "Failed"
     incident["feedback"] = {"fixId": req.fixId, "worked": req.worked,
                             "context": req.context or {}}
-    return {"confirmed": True, "simulated": True,
-            "message": "Feedback saved (mock mode, not stored in Hindsight yet)."}
+    save_live()
+
+    # Save the outcome into Hindsight so future recalls can use it.
+    note = (
+        f"Incident {incident_id} on {incident['service']} "
+        f"({incident['environment']}, severity {incident['severity']}): "
+        f"{incident['description']} Fix tried: {rec['title']}. {rec['description']} "
+        f"Outcome: the fix {'worked' if req.worked else 'failed'}."
+    )
+    saved = False
+    try:
+        await get_async_client().aretain(
+            bank_id=BANK_ID, content=note,
+            context="engineer feedback on a recommended fix",
+        )
+        saved = True
+    except Exception as error:
+        print("Hindsight retain failed:", error)
+
+    return {"confirmed": True, "simulated": not saved,
+            "message": ("Feedback saved to Hindsight memory." if saved
+                        else "Feedback recorded for this session only (Hindsight save failed).")}
 
 
 # ---------- 3. Incident history (with search and filters) ----------
@@ -228,12 +269,19 @@ def insights():
 # ---------- 5. Service / connection status ----------
 @app.get("/api/services")
 def services():
+    ready = bool(os.getenv("HINDSIGHT_API_KEY")) and bool(os.getenv("GROQ_API_KEY"))
     return {
-        "mode": "demo",
+        "mode": "live" if ready else "demo",
         "backendConfigured": True,
-        "memoryConfigured": False,
+        "memoryConfigured": bool(os.getenv("HINDSIGHT_API_KEY")),
         "connected": True,
         "checked": True,
-        "message": "Backend connected. Using demo data; Hindsight memory is not connected yet.",
+        "message": ("Backend connected. Hindsight memory and Groq are configured."
+                    if ready else "Backend connected, but API keys are missing."),
     }
 
+
+# ---------- Serve the frontend folder at / (must be last) ----------
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
