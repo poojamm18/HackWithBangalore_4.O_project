@@ -1,87 +1,163 @@
-# HackWithBangalore_4.O_project
-A Hindsight-powered AI Incident Response Agent that remembers past production incidents, recalls successful and failed resolutions, and improves future troubleshooting recommendations through continuous feedback.
+# IncidentIQ — Hindsight-Powered AI Incident Response Agent
 
-## Streamlit frontend
+IncidentIQ is an AI incident-response agent designed to help engineering teams troubleshoot production incidents by learning from previous incidents, their root causes, and the outcomes of past resolutions.
 
-The original Streamlit IncidentIQ frontend remains in `frontend/` and is
-unchanged by the traditional web frontend.
+The goal is to use persistent memory through [Hindsight](https://github.com/vectorize-io/hindsight) to recall relevant incident history, recommend troubleshooting steps, and improve future recommendations using engineer feedback.
+
+## Project Status
+
+**Current implementation:** Traditional HTML, CSS, and JavaScript frontend connected to a FastAPI backend.
+
+**Current operating mode:** Demo mode.
+
+The frontend and backend are connected and the API endpoints have been tested. However, the current backend uses sample incident data and in-memory state. Hindsight persistent memory and live Groq-powered AI analysis are not yet configured.
+
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Frontend | HTML, CSS, JavaScript |
+| Backend | Python, FastAPI |
+| API communication | REST API, Fetch |
+| AI integration (planned) | Groq |
+| Persistent memory (planned) | Hindsight |
+| Version control | Git and GitHub |
+
+## Project Structure
+
+```text
+HackWithBangalore_4.O_project/
+│
+├── backend/
+│   └── main.py
+│
+├── web/
+│   ├── assets/
+│   │   └── incidentiq-mark.svg
+│   ├── css/
+│   │   └── style.css
+│   ├── js/
+│   │   ├── api.js
+│   │   ├── app.js
+│   │   ├── mock-data.js
+│   │   └── theme.js
+│   └── index.html
+│
+├── .env.example
+├── requirements.txt
+└── README.md
+```
+
+## Features
+
+- **Incident Analysis:** Submit incident descriptions, services, environments, severity levels, and optional logs.
+- **Troubleshooting Recommendations:** View suggested fixes, explanations, troubleshooting steps, and available historical evidence.
+- **Incident Memory:** Display related historical incidents and their resolution outcomes.
+- **Engineer Feedback:** Mark recommendations as WORKED or FAILED.
+- **Incident History:** View previously analysed incidents and their outcomes.
+- **Memory Insights:** Explore incident patterns, successful resolutions, failure patterns, and lessons.
+- **Service Status:** View backend connectivity and memory configuration status.
+- **Responsive Interface:** Access the application through a responsive web interface.
+- **Theme Switching:** Toggle between light and dark themes.
+
+## Getting Started
+
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/poojamm18/HackWithBangalore_4.O_project.git
+cd HackWithBangalore_4.O_project
+```
+
+### 2. Install Python dependencies
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m streamlit run frontend/app.py
 ```
 
-### Streamlit demo behavior
+### 3. Start the FastAPI backend
 
-- Incident analysis uses transparent, rule-based sample recommendations; it is
-  not a live AI analysis.
-- Sample incident memories and analytics are labelled as demo data.
-- WORKED/FAILED feedback is held only in the current Streamlit session. It is
-  not sent to or persisted in Hindsight.
-- The service status reports the backend as unconfigured and does not claim a
-  successful connection check.
+From the project root, run:
 
-## HTML/CSS/JavaScript frontend
+```powershell
+python -m uvicorn backend.main:app --reload --port 8001
+```
 
-The separate `web/` application uses semantic HTML, CSS, and vanilla JavaScript
-modules. It works in demo mode without a backend and does not modify or replace
-the Streamlit implementation.
+The backend will be available at:
 
-Run a local static server from the repository root:
+- API base URL: http://127.0.0.1:8001
+- Interactive API documentation: http://127.0.0.1:8001/docs
+
+### 4. Start the frontend
+
+Open a second terminal in the project root and run:
 
 ```powershell
 python -m http.server 8000 --directory web
 ```
 
-Then open <http://localhost:8000>. Serving over HTTP is required for JavaScript
-modules; opening `web/index.html` directly as a `file://` URL is not supported.
-No npm install or build step is required.
+Open the application in your browser:
 
-### Theme and demo mode
+http://127.0.0.1:8000
 
-- Use the sidebar appearance switch to toggle dark/light themes. The selection
-  is stored in browser `localStorage` under `incidentiq-theme`.
-- The website defaults to demo mode. Sample incident history, memory and
-  analytics are marked as demo data; the analysis is rule-based, not live AI.
-- WORKED/FAILED demo feedback exists only in the current page session and is
-  never reported as saved to Hindsight.
-- `web/js/api.js` contains `API_CONFIG`. After the backend contract is
-  confirmed, set `mockMode` to `false` and supply `apiBaseUrl` and the confirmed
-  relative `endpoints`. Do not put credentials in this browser configuration.
+**Important:** Keep both terminals running while using the application. The frontend communicates with the backend through HTTP requests.
 
-### Web API contract expected by the UI
+## Backend API Endpoints
 
-`web/js/api.js` keeps transport separate from rendering. Route names and
-payloads below are the proposed UI-facing contract only; no backend URL or
-framework is assumed:
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/incidents/analyze` | Analyse a new incident |
+| POST | `/api/incidents/{incident_id}/feedback` | Submit feedback on a recommendation |
+| GET | `/api/incidents` | Retrieve incident history |
+| GET | `/api/insights` | Retrieve incident insights |
+| GET | `/api/services` | Retrieve backend and memory status |
 
-- `analyseIncident(incidentData)`: POST `{description, service, environment,
-  severity, logs}`. Expected response: `{incidentId, title, service,
-  environment, severity, createdAt, summary, recommendations, memories,
-  lessons}`. Each recommendation contains `{id, title, description, steps,
-  reason, previousSuccesses, previousFailures, evidenceStatus,
-  relatedIncidentIds}`. Each memory contains `{id, title, description, service,
-  environment, severity, rootCause, fix, outcome, relevance, createdAt}`.
-- `submitFeedback(incidentId, fixId, worked, context)`: POST
-  `{incidentId, fixId, worked, context}`. Expected response:
-  `{confirmed: boolean, message?: string, simulated?: boolean}`. The backend
-  must define what “confirmed” means and whether feedback is durably stored.
-- `getIncidentHistory(filters)`: GET with optional `search`, `service`,
-  `environment`, `severity`, and `outcome` query parameters. Expected response
-  is a list of incident records containing `{id, title, description, service,
-  environment, severity, category, rootCause, resolution, outcome, createdAt,
-  feedback}`.
-- `getMemoryInsights()`: expected response `{counts: {incidentsAnalysed,
-  rememberedIncidents, successfulResolutions, failedResolutions},
-  commonIncidentTypes, successfulFixes, failurePatterns, lessons}`. List
-  entries use `{name, count}`.
-- `getServiceStatus()`: expected response
-  `{mode, backendConfigured, memoryConfigured, connected, checked, message}`.
-  `connected` may be shown only when `checked` is true.
+The API documentation is available through FastAPI Swagger UI at `/docs`.
 
-The backend developer still needs to confirm base URL/deployment, routes and
-HTTP methods, authentication and CORS policy, request/response field names,
-analysis and memory evidence formats, feedback persistence and idempotency,
-history filtering/pagination, analytics aggregation, and the health-check
-semantics. No endpoint, credential, Hindsight SDK call, or backend framework is
-invented here.
+## Demo Mode and Current Limitations
+
+The current implementation runs in demo mode.
+
+- Incident analysis uses sample data and rule-based recommendations rather than live AI reasoning.
+- Historical incidents and recommendations are based on predefined sample records.
+- Feedback is accepted by the backend, but its state is held in memory.
+- Feedback and newly analysed incidents can remain visible while the backend process is running, but this state is lost when the backend restarts.
+- Hindsight is not yet connected, so incident memories and feedback are not persistently stored.
+- Groq-powered AI analysis is not yet enabled.
+- The application does not perform live production monitoring, automatically detect incidents, or apply fixes to production systems.
+
+The interface displays demo and configuration status to distinguish the current implementation from the planned AI-powered system.
+
+## Planned AI and Persistent Memory Integration
+
+The next stage of development is to integrate Hindsight and Groq to enable the intended learning workflow.
+
+1. **Incident Analysis:** Use an AI model to understand incoming incident descriptions and technical details.
+2. **Memory Retrieval:** Retrieve relevant past incidents and their resolutions using Hindsight.
+3. **Recommendation Generation:** Generate troubleshooting recommendations informed by historical successes and failures.
+4. **Feedback Collection:** Collect engineer feedback on whether recommended fixes worked.
+5. **Memory Retention:** Store incident details, recommendations, and verified outcomes in persistent memory.
+6. **Continuous Improvement:** Use recalled outcomes to improve the relevance and reliability of future recommendations.
+
+## Environment Configuration
+
+The repository includes a `.env.example` file containing the configuration variables intended for future integrations:
+
+```env
+HINDSIGHT_API_KEY=
+HINDSIGHT_BANK_ID=incident-agent
+GROQ_API_KEY=
+MOCK_MODE=true
+```
+
+Copy the example file to `.env` when configuring the integrations.
+
+**Never commit API keys or other secrets to GitHub.**
+
+## Team
+
+Built as a collaborative project for **Hack With Bangalore 4.0**.
+
+---
+
+**IncidentIQ — Turning past incidents into better future responses.**
