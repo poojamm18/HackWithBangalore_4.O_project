@@ -1,0 +1,122 @@
+[
+  {
+    "id": "INC-001",
+    "title": "Payment service database connection timeout",
+    "description": "The payment API intermittently timed out while opening database connections during normal traffic. Requests took longer than usual and some payments could not be completed.",
+    "service": "payments-service",
+    "environment": "production",
+    "severity": "high",
+    "rootCause": "The database connection pool was too small for the normal number of concurrent payment requests.",
+    "resolution": "Increased the connection pool from 10 to 30 after checking database capacity, then restarted the payment workers. Request timeouts stopped.",
+    "outcome": "Worked",
+    "createdAt": "2026-10-28T09:20:00Z"
+  },
+  {
+    "id": "INC-002",
+    "title": "Login API returned unauthorized errors",
+    "description": "Users with valid accounts were unexpectedly logged out and received HTTP 401 responses when calling the login-protected API.",
+    "service": "auth-service",
+    "environment": "production",
+    "severity": "medium",
+    "rootCause": "The access-token refresh flow did not handle expired refresh tokens correctly.",
+    "resolution": "Corrected refresh-token validation and added a safe re-authentication path when a refresh token expires.",
+    "outcome": "Worked",
+    "createdAt": "2026-10-29T11:05:00Z"
+  },
+  {
+    "id": "INC-003",
+    "title": "Payment database timeout continued under peak load",
+    "description": "The payment service showed database connection timeouts again during a traffic spike, even after the connection pool size was increased.",
+    "service": "payments-service",
+    "environment": "production",
+    "severity": "critical",
+    "rootCause": "Long-running queries and saturated database connections were consuming the available connection capacity.",
+    "resolution": "Tried increasing the connection pool again without checking database capacity. The database became more overloaded and the timeout problem continued; this attempted fix failed.",
+    "outcome": "Failed",
+    "createdAt": "2026-10-30T14:40:00Z"
+  },
+  {
+    "id": "INC-004",
+    "title": "User profile API response became slow",
+    "description": "The user profile endpoint took several seconds to return for users with large activity histories.",
+    "service": "user-service",
+    "environment": "production",
+    "severity": "medium",
+    "rootCause": "A frequently used query filtered by user ID without a suitable database index.",
+    "resolution": "Added and verified an index on the user ID column, then checked query execution time. The endpoint returned to its normal response time.",
+    "outcome": "Worked",
+    "createdAt": "2026-10-31T08:15:00Z"
+  },
+  {
+    "id": "INC-005",
+    "title": "Notification emails were not being delivered",
+    "description": "The notification service accepted email jobs, but messages remained queued and were not delivered.",
+    "service": "notification-service",
+    "environment": "production",
+    "severity": "high",
+    "rootCause": "The SMTP host and port in the service configuration did not match the email provider settings.",
+    "resolution": "Updated the SMTP host and port, verified the credentials, and sent a test email successfully.",
+    "outcome": "Worked",
+    "createdAt": "2026-11-01T10:30:00Z"
+  },
+  {
+    "id": "INC-006",
+    "title": "Inventory service ran out of memory",
+    "description": "The inventory service repeatedly restarted after memory usage increased during a batch stock update.",
+    "service": "inventory-service",
+    "environment": "production",
+    "severity": "high",
+    "rootCause": "A memory leak in the batch-processing path caused memory usage to grow over time.",
+    "resolution": "Restarted the service as a quick workaround. Memory usage dropped briefly, but the leak remained and the service failed again. The restart did not resolve the root cause.",
+    "outcome": "Failed",
+    "createdAt": "2026-11-02T07:50:00Z"
+  },
+  {
+    "id": "INC-007",
+    "title": "Order API returned internal server errors",
+    "description": "Some order submissions failed with HTTP 500 when optional fields were missing or contained unexpected values.",
+    "service": "order-service",
+    "environment": "production",
+    "severity": "high",
+    "rootCause": "The API did not validate incoming request fields before processing them, and unexpected values caused unhandled exceptions.",
+    "resolution": "Added request validation and handled invalid input with clear client error responses instead of internal server errors.",
+    "outcome": "Worked",
+    "createdAt": "2026-11-02T13:25:00Z"
+  },
+  {
+    "id": "INC-008",
+    "title": "Database rejected new inventory connections",
+    "description": "The inventory service received too-many-connections errors after several background jobs ran at the same time.",
+    "service": "inventory-service",
+    "environment": "production",
+    "severity": "medium",
+    "rootCause": "Database connections were not consistently released after background jobs completed.",
+    "resolution": "Fixed connection cleanup in the job handlers and added connection timeouts so unused connections were released.",
+    "outcome": "Worked",
+    "createdAt": "2026-11-03T09:10:00Z"
+  },
+  {
+    "id": "INC-009",
+    "title": "Payment database timeout during heavy traffic",
+    "description": "Payment requests timed out during a high-traffic period. Database monitoring showed slow repeated queries and high connection utilisation.",
+    "service": "payments-service",
+    "environment": "production",
+    "severity": "critical",
+    "rootCause": "Repeated expensive queries increased database load and left too little capacity for new payment requests.",
+    "resolution": "Optimised the repeated queries, checked database capacity, and tuned the connection pool within the supported limit. Payment requests recovered.",
+    "outcome": "Worked",
+    "createdAt": "2026-11-04T16:05:00Z"
+  },
+  {
+    "id": "INC-010",
+    "title": "Document upload requests were rejected",
+    "description": "Users could not upload larger supporting documents because the API rejected requests that exceeded its configured request-size limit.",
+    "service": "document-service",
+    "environment": "production",
+    "severity": "low",
+    "rootCause": "The configured maximum upload size was lower than the application's approved document-size requirement.",
+    "resolution": "Updated the request-size limit to the approved value and verified uploads at the new limit.",
+    "outcome": "Worked",
+    "createdAt": "2026-11-05T12:00:00Z"
+  }
+]
