@@ -248,7 +248,7 @@ function newIncidentPage() {
         <div class="field field-full"><label for="incident-logs">Error logs or technical details <span class="field-hint">Optional · redact sensitive data</span></label><textarea class="logs-area" id="incident-logs" name="logs" maxlength="5000" placeholder="Paste a short, redacted error excerpt (optional)"></textarea></div>
       </div>
       <div class="form-error-slot" id="form-error" aria-live="polite"></div>
-      <div class="form-footer"><span class="privacy-note">Demo analysis is rule-based and uses sample memories. No external service is contacted.</span><button class="primary-button" type="submit" id="analyse-button">◈ &nbsp; Analyse incident</button></div>
+      <div class="form-footer"><span class="privacy-note">Analysis uses Hindsight team memory and an LLM. Do not include secrets.</span><button class="primary-button" type="submit" id="analyse-button">◈ &nbsp; Analyse incident</button></div>
     </form>
   </section>${analysis}`;
 }
@@ -305,7 +305,7 @@ function recommendationCard(analysis, recommendation) {
         <button class="feedback-button feedback-failed ${feedback === "Failed" ? "is-selected" : ""}" type="button" data-action="feedback" data-incident-id="${escapeHTML(analysis.incidentId)}" data-fix-id="${escapeHTML(recommendation.id)}" data-worked="false" aria-pressed="${feedback === "Failed"}" ${feedback ? "disabled" : ""}>${feedback === "Failed" ? feedbackLabel : "× &nbsp; FAILED"}</button>
       </div>
       <span class="feedback-note${feedback ? " feedback-confirmed" : ""}" role="${feedback ? "status" : "note"}">${feedback
-    ? `Simulated demo feedback: ${escapeHTML(feedback)}. Available to later mock analyses in this tab until reload; not sent to an external service.`
+    ? `Outcome recorded: ${escapeHTML(feedback)}. Saved to team memory and used in the next analysis.`
     : "Record the observed outcome after trying this fix."}</span>
     </div>
   </article>`;
